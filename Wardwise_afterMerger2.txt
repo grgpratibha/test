@@ -1,0 +1,52 @@
+// ---------------------------------------------------------
+// 1. PROPERLY IDENTIFY CHANGE & RENAME THE BAND
+// ---------------------------------------------------------
+// We must unmask the images to 0 first, so Earth Engine can compare them mathematically
+var sprawl25_26 = builtUp2026.unmask(0).and(builtUp2025.unmask(0).not());
+
+// Mask it again so we only keep the pixels that actually represent new sprawl
+var sprawlMask = sprawl25_26.selfMask();
+
+// Calculate pixel area, apply our new mask, and RENAME the band to 'new_sprawl'
+var changeAreaImage = ee.Image.pixelArea().updateMask(sprawlMask).rename('new_sprawl');
+
+
+// [NOTE: Keep your 'wardsProcessed' and 'dissolvedWards' code exactly as it is right here]
+
+
+// ---------------------------------------------------------
+// 2. CALCULATE AREA (using the dissolved wards)
+// ---------------------------------------------------------
+var wardChangeStats = changeAreaImage.reduceRegions({
+  collection: dissolvedWards, 
+  reducer: ee.Reducer.sum(),
+  scale: 10, 
+  tileScale: 4 
+});
+
+
+// ---------------------------------------------------------
+// 3. FIX THE NULL/EMPTY CSV ISSUE
+// ---------------------------------------------------------
+var finalStatsForExport = wardChangeStats.map(function(feature) {
+  // Because we renamed the image band to 'new_sprawl' in step 1, 
+  // the reducer will guarantee the sum is stored under the name 'new_sprawl'!
+  var areaValue = feature.get('new_sprawl'); 
+  
+  // Convert any nulls to 0
+  var safeArea = ee.Algorithms.If(ee.Algorithms.IsEqual(areaValue, null), 0, areaValue);
+  
+  // Save it as Area_sqm for the CSV export
+  return feature.set('Area_sqm', safeArea);
+});
+
+
+// ---------------------------------------------------------
+// 4. EXPORT TO CSV
+// ---------------------------------------------------------
+Export.table.toDrive({
+  collection: finalStatsForExport, 
+  description: 'Pokhara_Ward_Change_2025_2026_Working',
+  fileFormat: 'CSV',
+  selectors: ['Ward_No', 'Area_sqm'] 
+});
